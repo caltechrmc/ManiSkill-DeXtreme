@@ -1,0 +1,6 @@
+[submodule "leap_hand"]
+	path = leap_hand
+	url = https://github.com/caltechrmc/ManiSkill-LEAP-Hand
+[submodule "rgmc_in_hand_manipulation_2025"]
+	path = rgmc_in_hand_manipulation_2025
+	url = https://github.com/Rice-RobotPI-Lab/rgmc_in_hand_manipulation_2025
