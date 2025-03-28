@@ -1,14 +1,12 @@
-from tasks.cube_reorientation import *
-import matplotlib.pyplot as plt
-import gymnasium as gym
+from tasks.reorient_cube import *
 
-env = gym.make("ReorientCube-v1", render_mode="human")
+import gymnasium as gym
+import numpy as np
+
+env = gym.make("ReorientCube-v0", render_mode="human", reward_mode="dense")
 env.reset()
 
 while True:
-    action = env.action_space.sample()
+    action = np.zeros(16)
     env.step(action)
     env.render()
-#img = env.render()
-#plt.imshow(img[0])
-#plt.show()

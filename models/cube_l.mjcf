@@ -1,0 +1,11 @@
+<?xml version="1.0" ?>
+<mujoco model="cube_l">
+  <asset>
+    <mesh name="cube_mesh" file="cube_l_rescaled_recentered.stl"/>
+  </asset>
+  <worldbody>
+    <body name="cube_body" pos="0 0 0">
+      <geom type="mesh" mesh="cube_mesh"/>
+    </body>
+  </worldbody>
+</mujoco>
