@@ -234,31 +234,31 @@ class ReorientCubeEnv(BaseEnv):
         return info
 
     def compute_normalized_dense_reward(self, obs, action, info):
-        # Orientation difference between the cube and the goal
+        # Reward for reorienting the cube toward the goal orientation
         orientation_reward = self.config.reward.orientation_gain / (info["orientation_error"] + self.config.reward.orientation_eps)
         
-        # Distance between the cube and the goal
+        # Reward for keeping the cube close to a fixed goal position
         position_reward = self.config.reward.position_gain * info["position_error"]
         
-        # Action penalty
+        # Penalty for large actions
         # These are the raw actions passed to env.step, not preprocessed by the controller.
         action_penalty = self.config.reward.action_penalty * torch.sum(action ** 2, dim = -1)
         
-        # Action delta penalty
+        # Penalty for rapid changes in joint targets
         # For the built-in PID joint position controller, you can get the joint targets as follows:
         curr_targets = self.agent.controller.get_state()["target_qpos"]
         action_delta_penalty = self.config.reward.action_delta_penalty * torch.sum((curr_targets - self.prev_targets) ** 2, dim = -1)
         
-        # Joint velocity penalty
+        # Penalty for large joint velocities
         velocity_penalty = self.config.reward.velocity_penalty * torch.sum(obs["agent"]["qvel"] ** 2, dim = -1)
         
-        # Success bonus
+        # Bonus for reaching a goal
         success_reward = self.config.reward.success_bonus * info["goal"]
         
-        # Fall penalty
+        # Penalty for dropping the cube
         drop_penalty = self.config.reward.drop_penalty * info["drop"]
         
-        # Apply penalty for not reaching the goal
+        # Penalty for not reaching the goal in time
         timeout_penalty = self.config.reward.timeout_penalty * info["timeout"]
         
         # Update the previous targets 
