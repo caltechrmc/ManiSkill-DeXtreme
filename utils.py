@@ -48,3 +48,5 @@ def unique_cube_rotations_3d() -> list[ndarray]:
 
     return torch.from_numpy(np.array(all_rotations)).to(torch.float32)
     
+def batched_randint(lo: int, hi: int, *, dtype: torch.dtype, device: torch.device, rng: BatchedRNG):
+    return torch.from_numpy(rng.randint(lo, hi)).to(dtype=dtype, device=device)
