@@ -47,6 +47,15 @@ def unique_cube_rotations_3d() -> list[ndarray]:
                 all_rotations.append(R.from_matrix(rotation_matrix).as_quat())
 
     return torch.from_numpy(np.array(all_rotations)).to(torch.float32)
-    
+
+def batched_quat_diff(q1: Tensor, q2: Tensor) -> Tensor:
+    """
+    Compute the difference between two quaternions in batch.
+    The difference is represented as the quaternion that rotates q2 to q1.
+    """
+    q1_conj = torch.cat([q1[..., :3] * -1, q1[..., 3:]], dim=-1)
+    q_diff = torch.einsum('...ij,...j->...i', q1_conj, q2)
+    return q_diff
+
 def batched_randint(lo: int, hi: int, *, dtype: torch.dtype, device: torch.device, rng: BatchedRNG):
     return torch.from_numpy(rng.randint(lo, hi)).to(dtype=dtype, device=device)
