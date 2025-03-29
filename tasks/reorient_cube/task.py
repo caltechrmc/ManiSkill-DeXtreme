@@ -75,9 +75,6 @@ class ReorientCubeEnv(BaseEnv):
     # Robot agent type
     agent: LEAPHandLeft
     
-    # Model constants
-    dofs = 16
-    
     # Scene parameters
     hand_elevation = 0.5 # The height of the hand above the tabletop (m?)
     
