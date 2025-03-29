@@ -10,7 +10,10 @@ from mani_skill.utils.structs.types import SimConfig
 from mani_skill.utils.building.ground import build_ground
 from mani_skill.utils.structs.pose import Pose
 from mani_skill.utils import common
+from mani_skill.sensors.camera import CameraConfig
+from mani_skill.utils import sapien_utils
 
+import numpy as np
 import sapien
 import torch
 
@@ -44,10 +47,10 @@ def build_goal(scene):
     builder = scene.create_actor_builder()
     
     # Create the visual body
-    builder.add_visual_from_file(
-        "models/cube_l_rescaled_recentered.stl",
-        material=sapien.render.RenderMaterial(base_color=[0, 1, 0, 1]),
-    )
+    #builder.add_visual_from_file(
+    #    "models/cube_l_rescaled_recentered.stl",
+    #    material=sapien.render.RenderMaterial(base_color=[0, 1, 0, 1]),
+    #)
 
     builder.initial_pose = sapien.Pose(p=[-0.1 + 0.045, 0.01 + 0.045, 0.505 + 0.045],
                                        q=[1, 0, 0, 0])
@@ -79,8 +82,8 @@ class ReorientCubeEnv(BaseEnv):
     hand_elevation = 0.5 # The height of the hand above the tabletop (m?)
     
     # Simulation config
-    sim_freq = 120 # This is supposed to be 60 in DeXtreme
-    control_freq = 60 # This is supposed to be 30 in DeXtreme
+    sim_freq = 60 # This is supposed to be 60 in DeXtreme
+    control_freq = 30 # This is supposed to be 30 in DeXtreme
     
     @property
     def _default_sim_config(self):
@@ -88,6 +91,20 @@ class ReorientCubeEnv(BaseEnv):
             sim_freq = self.sim_freq,
             control_freq = self.control_freq,
         )
+        
+    @property
+    def _default_sensor_configs(self):
+        # registers one 128x128 camera looking at the robot, cube, and target
+        # a smaller sized camera will be lower quality, but render faster
+        pose = sapien_utils.look_at(eye=[0.3, 0, 0.6], target=[-0.1 + 0.045, 0.01 + 0.045, 0.505 + 0.045])
+        return [
+            CameraConfig("base_camera", pose=pose, width=1024, height=1024, fov=torch.pi / 2, near=0.01, far=100)
+        ]
+    @property
+    def _default_human_render_camera_configs(self):
+        # registers a more high-definition (512x512) camera used just for rendering when render_mode="rgb_array" or calling env.render_rgb_array()
+        pose = sapien_utils.look_at(eye=[0.6, 0.7, 0.6], target=[-0.1 + 0.045, 0.01 + 0.045, 0.505 + 0.045])
+        return CameraConfig("render_camera", pose=pose, width=1024, height=1024, fov=1, near=0.01, far=100)
         
     def __init__(self, *args, robot_uids="leap_hand_left", obs_mode="state_dict", num_envs=1, config=ReorientCubeEnvConfig(), **kwargs):
         self.config = config
@@ -137,14 +154,16 @@ class ReorientCubeEnv(BaseEnv):
     def reset_goals(self, env_ids):
         """Resample new goals for the specified environment IDs."""
         
+        goal_q = self.goal.pose.q
+        
         # Resample the goal poses
         if self.config.sample_so3:
-            self.goal_q[env_ids] = random_quaternion(env_ids, rng=self._batched_episode_rng)
+            goal_q[env_ids] = random_quaternion(env_ids, rng=self._batched_episode_rng)
         else:
-            self.goal_q[env_ids] = sample_rotations(env_ids, self.rotations_pool, rng=self._batched_episode_rng)
+            goal_q[env_ids] = sample_rotations(env_ids, self.rotations_pool, rng=self._batched_episode_rng)
 
         # Update the goals in the visualizer
-        goal_pose = Pose.create_from_pq(p=[-0.1 + 0.045, 0.01 + 0.045, 0.505 + 0.045], q=self.goal_q)
+        goal_pose = Pose.create_from_pq(p=[-0.1 + 0.045, 0.01 + 0.045, 0.505 + 0.045], q=goal_q)
         self.goal.set_pose(goal_pose)
         
     def _initialize_episode(self, env_ids: torch.Tensor, options: dict):
@@ -152,6 +171,26 @@ class ReorientCubeEnv(BaseEnv):
         with torch.device(self.device):
             # Resample new goals for subenvs getting reset
             self.reset_goals(env_ids)
+            
+            # Reset the cube position
+            p = self.cube.pose.p
+            q = self.cube.pose.q
+
+            p[env_ids] = torch.tensor([-0.1 + 0.045, 0.01 + 0.045, 0.505 + 0.045], dtype=torch.float)
+            q[env_ids] = torch.tensor([1, 0, 0, 0], dtype=torch.float)
+            
+            self.cube.set_pose(Pose.create_from_pq(p=p, q=q))
+            
+            self.agent.reset(np.zeros(16))
+            #self.agent.robot.set_pose(sapien.Pose([-1.05, 0, -self.table_height]))
+            
+            # Reset the hand
+            #self.agent.controller.reset()
+            
+            #qpos = self.agent.robot.qpos
+            #qvel = self.agent.robot.qvel
+            
+            #qpos[env_ids] = self.agent.controller.ini
             
             # Reset buffers
             self.goal_hold_timer[env_ids] = 0
@@ -176,11 +215,11 @@ class ReorientCubeEnv(BaseEnv):
             "last_actions": self.last_actions.clone(),
             "hand_joint_angles": self.agent.controller.qpos,
             "hand_joint_velocities": self.agent.robot.qvel,
-            #"stochastic_delays": None,
+            #"stochastic_delays": None,∂
             #"fingertip_torques": None,
             #"hand_joints_generalized_forces": None,
             #"object_scale": None,
-            "object_mass": self.cube.mass,
+            #"object_mass": self.cube.mass,
             #"object_friction": None,
             "object_linear_velocity": self.cube.linear_velocity,
             "object_angular_velocity": self.cube.angular_velocity,
@@ -208,11 +247,11 @@ class ReorientCubeEnv(BaseEnv):
             fingertip_angular_velocities.append(fingertip_link.angular_velocity)
             fingertip_forces.append(fingertip_link.get_net_contact_forces())
             
-        obs["fingertip_positions"] = torch.cat(fingertip_positions)
-        obs["fingertip_rotations"] = torch.cat(fingertip_rotations)
-        obs["fingertip_linear_velocities"] = torch.cat(fingertip_linear_velocities)
-        obs["fingertip_angular_velocities"] = torch.cat(fingertip_angular_velocities)
-        obs["fingertip_forces"] = torch.cat(fingertip_forces)
+        obs["fingertip_positions"] = torch.cat(fingertip_positions, -1)
+        obs["fingertip_rotations"] = torch.cat(fingertip_rotations, -1)
+        obs["fingertip_linear_velocities"] = torch.cat(fingertip_linear_velocities, -1)
+        obs["fingertip_angular_velocities"] = torch.cat(fingertip_angular_velocities, -1)
+        obs["fingertip_forces"] = torch.cat(fingertip_forces, -1)
         
         return obs
         
@@ -234,7 +273,7 @@ class ReorientCubeEnv(BaseEnv):
     def evaluate(self):
         # Compute error terms
         position_error = torch.norm(self.cube.pose.p - self.goal.pose.p, dim = -1)
-        orientation_error = common.quat_diff_rad(self.cube.pose.q, self.goal_q)
+        orientation_error = common.quat_diff_rad(self.cube.pose.q, self.goal.pose.q)
         
         # Check for success
         # TODO: Do we need torch.abs here or is it already non-negative?
@@ -284,15 +323,17 @@ class ReorientCubeEnv(BaseEnv):
         
         # Penalty for large actions
         # These are the raw actions passed to env.step, not preprocessed by the controller.
-        action_penalty = self.config.reward.action_penalty * torch.sum(action ** 2, dim = -1)
+        action_penalty = self.config.reward.action_penalty * torch.sum(action * action, dim = -1)
         
         # Penalty for rapid changes in joint targets
         # For the built-in PID joint position controller, you can get the joint targets as follows:
-        curr_targets = self.agent.controller.get_state()["target_qpos"]
-        action_delta_penalty = self.config.reward.action_delta_penalty * torch.sum((curr_targets - self.prev_targets) ** 2, dim = -1)
+        
+        curr_targets = self.agent.controller.get_state()["hand"]["target_qpos"]
+        delta_targets = curr_targets - self.prev_targets
+        action_delta_penalty = self.config.reward.action_delta_penalty * torch.sum(delta_targets * delta_targets, dim = -1)
         
         # Penalty for large joint velocities
-        velocity_penalty = self.config.reward.velocity_penalty * torch.sum(obs["agent"]["qvel"] ** 2, dim = -1)
+        velocity_penalty = self.config.reward.velocity_penalty * torch.sum(self.agent.robot.qvel * self.agent.robot.qvel, dim = -1)
         
         # Bonus for reaching a goal
         success_reward = self.config.reward.success_bonus * info["goal"]
