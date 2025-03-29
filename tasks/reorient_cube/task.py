@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from leap_hand.leap import LEAPHandLeft
 from tasks.reorient_cube.config import ReorientCubeEnvConfig
-from utils import random_quaternion, unique_cube_rotations_3d, sample_rotations, batched_randint
+from utils import random_quaternion, unique_cube_rotations_3d, sample_rotations, batched_randint, batched_quat_diff
 
 from mani_skill.envs.sapien_env import BaseEnv
 from mani_skill.utils.registration import register_env
@@ -105,11 +105,13 @@ class ReorientCubeEnv(BaseEnv):
         # prev_targets - previous joint position targets
         # duration_goal_held - the number of steps the goal has been held (hold_count_buf in DeXtreme)
         # successes - the number of consecutive successes in each subenv since the last episode reset
+        # last_actions - the last actions taken
         self.achieved_success = torch.ones(num_envs, dtype=torch.long, device=self._sim_device)
         self.prev_targets = torch.zeros((num_envs, config.dofs), dtype=torch.float, device=self._sim_device)
         self.goal_achievement_timer = torch.zeros(num_envs, dtype=torch.long, device=self._sim_device)
         self.goal_hold_timer = torch.zeros(num_envs, dtype=torch.long, device=self._sim_device)
         self.successes = torch.zeros(num_envs, dtype=torch.float, device=self._sim_device)
+        self.last_actions = torch.zeros((num_envs, config.dofs), dtype=torch.float, device=self._sim_device)
         
         super().__init__(*args, robot_uids=robot_uids, obs_mode=obs_mode, num_envs=num_envs, **kwargs)
         
@@ -153,6 +155,7 @@ class ReorientCubeEnv(BaseEnv):
             
             # Reset buffers
             self.goal_hold_timer[env_ids] = 0
+            self.last_actions[env_ids] = 0
             
             if self.config.use_adr and len(env_ids) == self.num_envs:
                 # TODO: Why does DeXtreme do this?
@@ -161,7 +164,57 @@ class ReorientCubeEnv(BaseEnv):
                                                               rng=self._batched_episode_rng)
             else:
                 self.goal_achievement_timer[env_ids] = 0
+    
+    def _get_obs_extra(self, info):
+        obs = {
+            #"object_position_with_noise": None,
+            #"object_orientation_with_noise": None,
+            "target_position": self.goal.pose.p,
+            "target_orientation": self.goal.pose.q,
+            "relative_target_orientation": batched_quat_diff(self.goal.pose.q, self.cube.pose.q),
+            "last_actions": self.last_actions.clone(),
+            "hand_joint_angles": self.agent.controller.qpos,
+            "hand_joint_velocities": self.agent.robot.qvel,
+            #"stochastic_delays": None,
+            #"fingertip_torques": None,
+            #"hand_joints_generalized_forces": None,
+            #"object_scale": None,
+            "object_mass": self.cube.mass,
+            #"object_friction": None,
+            "object_linear_velocity": self.cube.linear_velocity,
+            "object_angular_velocity": self.cube.angular_velocity,
+            "object_position": self.cube.pose.p,
+            "object_orientation": self.cube.pose.q,
+            #"random_forces": None,
+            #"domain_randomization_params": None,
+            #"gravity_vector": None,
+            #"rotation_distances": None,
+            #"hand_scale": None,
+        }
+        
+        fingertip_positions = []
+        fingertip_rotations = []
+        fingertip_linear_velocities = []
+        fingertip_angular_velocities = []
+        fingertip_forces = []
+        
+        for fingertip_link_name in ["fingertip", "fingertip_2", "fingertip_3", "thumb_fingertip"]:
+            fingertip_link = self.agent.robot.find_link_by_name(fingertip_link_name)
             
+            fingertip_positions.append(fingertip_link.pose.p)
+            fingertip_rotations.append(fingertip_link.pose.q)
+            fingertip_linear_velocities.append(fingertip_link.linear_velocity)
+            fingertip_angular_velocities.append(fingertip_link.angular_velocity)
+            fingertip_forces.append(fingertip_link.get_net_contact_forces())
+            
+        obs["fingertip_positions"] = torch.cat(fingertip_positions)
+        obs["fingertip_rotations"] = torch.cat(fingertip_rotations)
+        obs["fingertip_linear_velocities"] = torch.cat(fingertip_linear_velocities)
+        obs["fingertip_angular_velocities"] = torch.cat(fingertip_angular_velocities)
+        obs["fingertip_forces"] = torch.cat(fingertip_forces)
+        
+        return obs
+        
     def _before_control_step(self):
         # Resample new goals in subenvs that just reached success in the last step
         reset_goal_env_ids = self.achieved_success.nonzero().squeeze(-1)
@@ -251,6 +304,7 @@ class ReorientCubeEnv(BaseEnv):
         
         # Update the previous targets 
         self.prev_targets = curr_targets
+        self.last_actions = action
         
         return (
             orientation_reward +\
