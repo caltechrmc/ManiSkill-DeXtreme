@@ -78,10 +78,6 @@ class ReorientCubeEnv(BaseEnv):
     # Scene parameters
     hand_elevation = 0.5 # The height of the hand above the tabletop (m?)
     
-    # If true, goals are selected from SO(3). If False, they are selected
-    # uniformly from all possible 90° cube rotations.
-    sample_so3 = False
-    
     # Simulation config
     sim_freq = 120 # This is supposed to be 60 in DeXtreme
     control_freq = 60 # This is supposed to be 30 in DeXtreme
@@ -140,7 +136,7 @@ class ReorientCubeEnv(BaseEnv):
         """Resample new goals for the specified environment IDs."""
         
         # Resample the goal poses
-        if self.sample_so3:
+        if self.config.sample_so3:
             self.goal_q[env_ids] = random_quaternion(env_ids, rng=self._batched_episode_rng)
         else:
             self.goal_q[env_ids] = sample_rotations(env_ids, self.rotations_pool, rng=self._batched_episode_rng)

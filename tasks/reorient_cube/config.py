@@ -43,6 +43,10 @@ class ReorientCubeEnvConfig:
     # TODO: Not yet implemented
     use_adr: bool = False
     
+    # If true, goals are selected from SO(3). If False, they are selected
+    # uniformly from all possible 90° cube rotations.
+    sample_so3 = False
+    
     # The maximum amount of time to reach a goal that we allow (in seconds)
     stuck_timeout: int = 80
     
