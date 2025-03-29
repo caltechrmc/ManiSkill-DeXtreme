@@ -162,8 +162,6 @@ class ReorientCubeEnv(BaseEnv):
             self.reset_goals(env_ids)
             
             # Reset buffers
-            #self.consecutive_successes[env_ids] = 0
-            #self.time_since_last_success[env_ids] = 0
             self.goal_hold_timer[env_ids] = 0
             
             if self.config.use_adr and len(env_ids) == self.num_envs:
