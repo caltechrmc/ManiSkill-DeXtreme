@@ -191,7 +191,7 @@ class ReorientCubeEnv(BaseEnv):
         
     def evaluate(self):
         # Compute error terms
-        position_error = torch.norm(self.cube.pose.p - self.goal.p, dim = -1)
+        position_error = torch.norm(self.cube.pose.p - self.goal.pose.p, dim = -1)
         orientation_error = common.quat_diff_rad(self.cube.pose.q, self.goal_q)
         
         # Check for success
@@ -220,7 +220,7 @@ class ReorientCubeEnv(BaseEnv):
         
         # Return info
         info = {
-            "fail": failed,
+            "fail": failed.to(torch.int),
             "goal": self.achieved_success,
             "drop": dropped_cube,
             "timeout": timed_out,
@@ -229,7 +229,7 @@ class ReorientCubeEnv(BaseEnv):
         }
         
         if succeeded is not None:
-            info["success"] = succeeded
+            info["success"] = succeeded.to(torch.int)
             
         return info
 
