@@ -120,9 +120,6 @@ class ReorientCubeEnv(BaseEnv):
         
         super().__init__(*args, robot_uids=robot_uids, obs_mode=obs_mode, num_envs=num_envs, **kwargs)
         
-        #self.time_since_last_success = torch.zeros(num_envs, dtype=torch.float, device=self.device)
-        #self.consecutive_successes = torch.zeros(self.num_envs, dtype=torch.long, device=self.device)
-        
     def _load_agent(self, options: dict):
         """Override the initial pose of the robot hand."""
         initial_hand_pose = sapien.Pose(p=[0, 0, self.hand_elevation],
