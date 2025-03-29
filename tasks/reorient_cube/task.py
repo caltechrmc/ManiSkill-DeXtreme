@@ -166,6 +166,7 @@ class ReorientCubeEnv(BaseEnv):
                 self.goal_achievement_timer[env_ids] = 0
     
     def _get_obs_extra(self, info):
+        # TODO: There are some more observations we need
         obs = {
             #"object_position_with_noise": None,
             #"object_orientation_with_noise": None,
