@@ -86,8 +86,8 @@ class ReorientCubeEnv(BaseEnv):
     sample_so3 = False
     
     # Simulation config
-    sim_freq = 120
-    control_freq = 60
+    sim_freq = 120 # This is supposed to be 60 in DeXtreme
+    control_freq = 60 # This is supposed to be 30 in DeXtreme
     
     @property
     def _default_sim_config(self):
