@@ -1,7 +1,9 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 @dataclass
 class ReorientCubeEnvRewardConfig:
+    """Configuration class for the shaped reward function."""
+    
     # Scaling factor for reward term that brings the cube orientation close to the goal
     orientation_gain: float = 1.0
 
@@ -28,11 +30,11 @@ class ReorientCubeEnvRewardConfig:
     
     # A penalty for not reaching a goal in time
     timeout_penalty: float = drop_penalty * 0.5
-
+    
 @dataclass
 class ReorientCubeEnvConfig:
     # A configuration for the shaped reward function
-    reward: ReorientCubeEnvRewardConfig
+    reward: ReorientCubeEnvRewardConfig = field(default_factory=ReorientCubeEnvRewardConfig)
     
     # The number of DOFs in the hand
     dofs: int = 16
