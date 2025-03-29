@@ -9,6 +9,7 @@ from mani_skill.utils.registration import register_env
 from mani_skill.utils.structs.types import SimConfig
 from mani_skill.utils.building.ground import build_ground
 from mani_skill.utils.structs.pose import Pose
+from mani_skill.utils import common
 
 import sapien
 import torch
