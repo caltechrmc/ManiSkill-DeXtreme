@@ -27,7 +27,7 @@ def random_quaternion(env_ids: Tensor, *, rng: BatchedRNG):
     return torch.stack([q1, q2, q3, q4], dim = -1)
 
 def sample_rotations(env_ids: Tensor, rotations_pool: Tensor, *, rng: BatchedRNG):
-    rotation_idxs = rng.randint(len(rotations_pool))[env_ids]
+    rotation_idxs = torch.from_numpy(rng.randint(len(rotations_pool))).to(rotations_pool.device)[env_ids]
     return rotations_pool[rotation_idxs]
 
 def unique_cube_rotations_3d() -> list[ndarray]:
