@@ -10,7 +10,7 @@ import torch
 
 N = 64
 env = gym.make("ReorientCube-v0", num_envs=N, obs_mode="state", render_mode="rgb_array", reward_mode="normalized_dense", device="cuda")
-env = RecordEpisode(env, output_dir="videos", save_trajectory=True, trajectory_name="trajectory", save_video=True, video_fps=60, render_substeps=False)
+#env = RecordEpisode(env, output_dir="videos", save_trajectory=True, trajectory_name="trajectory", save_video=True, video_fps=60, render_substeps=False)
 env = ManiSkillSB3VectorEnv(env)
 
 model = RecurrentPPO("MlpLstmPolicy", env,

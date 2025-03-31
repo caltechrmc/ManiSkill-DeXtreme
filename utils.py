@@ -13,7 +13,7 @@ if TYPE_CHECKING:
     from torch import Tensor
     from numpy import ndarray
 
-def random_quaternion(env_ids: Tensor, *, rng: BatchedRNG):
+def random_quaternion(env_ids: Tensor, *, rng: BatchedRNG) -> Tensor:
     """Sample uniform random quaternions using Marsaglia method."""
     u1 = torch.from_numpy(rng.rand())[env_ids].to(torch.float)
     u2 = torch.from_numpy(rng.rand())[env_ids].to(torch.float)
@@ -26,11 +26,12 @@ def random_quaternion(env_ids: Tensor, *, rng: BatchedRNG):
 
     return torch.stack([q1, q2, q3, q4], dim = -1)
 
-def sample_rotations(env_ids: Tensor, rotations_pool: Tensor, *, rng: BatchedRNG):
-    rotation_idxs = torch.from_numpy(rng.randint(len(rotations_pool))).to(rotations_pool.device)[env_ids]
+def sample_rotations(env_ids: Tensor, rotations_pool: Tensor, *, rng: BatchedRNG) -> Tensor:
+    random_integers = batched_randint(0, len(rotations_pool), dtype=torch.long, device=rotations_pool.device)
+    rotation_idxs = random_integers[env_ids]
     return rotations_pool[rotation_idxs]
 
-def unique_cube_rotations_3d() -> list[ndarray]:
+def unique_cube_rotations_3d() -> Tensor:
     """
     Returns the list of all possible 90-degree cube rotations in 3D.
     Based on https://stackoverflow.com/a/70413438/1645784
@@ -57,5 +58,5 @@ def batched_quat_diff(q1: Tensor, q2: Tensor) -> Tensor:
     q_diff = torch.einsum('...ij,...j->...i', q1_conj, q2)
     return q_diff
 
-def batched_randint(lo: int, hi: int, *, dtype: torch.dtype, device: torch.device, rng: BatchedRNG):
+def batched_randint(lo: int, hi: int, *, dtype: torch.dtype, device: torch.device, rng: BatchedRNG) -> Tensor:
     return torch.from_numpy(rng.randint(lo, hi)).to(dtype=dtype, device=device)

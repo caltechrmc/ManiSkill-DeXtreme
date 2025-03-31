@@ -109,7 +109,7 @@ class ReorientCubeEnv(BaseEnv):
             self.goal_q = torch.empty((num_envs, 4), dtype=torch.float)
             
             # A list of all possible 90-degree cube rotations in 3D.
-            self.rotations_pool = unique_cube_rotations_3d()
+            self.rotations_pool = unique_cube_rotations_3d().to(device)
             
             # Allocate buffers
             # achieved_success - which subenvs succeeded in the last step (only success after hold, if applicable)
