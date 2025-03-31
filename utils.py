@@ -27,7 +27,7 @@ def random_quaternion(env_ids: Tensor, *, rng: BatchedRNG) -> Tensor:
     return torch.stack([q1, q2, q3, q4], dim = -1)
 
 def sample_rotations(env_ids: Tensor, rotations_pool: Tensor, *, rng: BatchedRNG) -> Tensor:
-    random_integers = batched_randint(0, len(rotations_pool), dtype=torch.long, device=rotations_pool.device)
+    random_integers = batched_randint(0, len(rotations_pool), dtype=torch.long, device=rotations_pool.device, rng=rng)
     rotation_idxs = random_integers[env_ids]
     return rotations_pool[rotation_idxs]
 
