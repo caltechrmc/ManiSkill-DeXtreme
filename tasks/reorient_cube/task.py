@@ -6,7 +6,7 @@ from utils import random_quaternion, unique_cube_rotations_3d, sample_rotations,
 
 from mani_skill.envs.sapien_env import BaseEnv
 from mani_skill.utils.registration import register_env
-from mani_skill.utils.structs.types import SimConfig
+from mani_skill.utils.structs.types import SimConfig, GPUMemoryConfig
 from mani_skill.utils.building.ground import build_ground
 from mani_skill.utils.structs.pose import Pose
 from mani_skill.utils import common
@@ -42,21 +42,6 @@ def build_cube(scene: ManiSkillScene):
     
     return builder.build(name = "cube")
 
-def build_goal(scene):
-    """Build the target cube."""
-    builder = scene.create_actor_builder()
-    
-    # Create the visual body
-    #builder.add_visual_from_file(
-    #    "models/cube_l_rescaled_recentered.stl",
-    #    material=sapien.render.RenderMaterial(base_color=[0, 1, 0, 1]),
-    #)
-
-    builder.initial_pose = sapien.Pose(p=[-0.1 + 0.045, 0.01 + 0.045, 0.505 + 0.045],
-                                       q=[1, 0, 0, 0])
-    
-    return builder.build_static(name = "goal")
-
 class EnvDextreme(BaseEnv):
     def get_state_dict(self):
         """
@@ -90,7 +75,13 @@ class ReorientCubeEnv(BaseEnv):
         return SimConfig(
             sim_freq = self.sim_freq,
             control_freq = self.control_freq,
+            gpu_memory_config=GPUMemoryConfig(
+                max_rigid_contact_count=self.num_envs * max(1024, self.num_envs) * 8,
+                max_rigid_patch_count=self.num_envs * max(1024, self.num_envs) * 2,
+                found_lost_pairs_capacity=2 ** 26,
+            )
         )
+
         
     @property
     def _default_sensor_configs(self):
@@ -106,32 +97,34 @@ class ReorientCubeEnv(BaseEnv):
         pose = sapien_utils.look_at(eye=[0.6, 0.7, 0.6], target=[-0.1 + 0.045, 0.01 + 0.045, 0.505 + 0.045])
         return CameraConfig("render_camera", pose=pose, width=1024, height=1024, fov=1, near=0.01, far=100)
         
-    def __init__(self, *args, robot_uids="leap_hand_left", obs_mode="state_dict", num_envs=1, config=ReorientCubeEnvConfig(), **kwargs):
+    def __init__(self, *args, robot_uids="leap_hand_left", obs_mode="state_dict", num_envs=1, config=ReorientCubeEnvConfig(), device="cuda", **kwargs):
         self.config = config
-        
-        # Create uninitialized goal state buffers
-        self.goal_p = torch.empty((num_envs, 3), dtype=torch.float, device=self._sim_device)
-        self.goal_q = torch.empty((num_envs, 4), dtype=torch.float, device=self._sim_device)
-        
-        # A list of all possible 90-degree cube rotations in 3D.
-        self.rotations_pool = unique_cube_rotations_3d()
-        
-        # Allocate buffers
-        # achieved_success - which subenvs succeeded in the last step (only success after hold, if applicable)
-        # goal_achievement_timer - number of timesteps since the last goal was reached (progress_buf in DeXterme)
-        # prev_targets - previous joint position targets
-        # duration_goal_held - the number of steps the goal has been held (hold_count_buf in DeXtreme)
-        # successes - the number of consecutive successes in each subenv since the last episode reset
-        # last_actions - the last actions taken
-        self.achieved_success = torch.ones(num_envs, dtype=torch.long, device=self._sim_device)
-        self.prev_targets = torch.zeros((num_envs, config.dofs), dtype=torch.float, device=self._sim_device)
-        self.goal_achievement_timer = torch.zeros(num_envs, dtype=torch.long, device=self._sim_device)
-        self.goal_hold_timer = torch.zeros(num_envs, dtype=torch.long, device=self._sim_device)
-        self.successes = torch.zeros(num_envs, dtype=torch.float, device=self._sim_device)
-        self.last_actions = torch.zeros((num_envs, config.dofs), dtype=torch.float, device=self._sim_device)
-        
+        self._create_pre_scene_buffers(config, num_envs, device)
         super().__init__(*args, robot_uids=robot_uids, obs_mode=obs_mode, num_envs=num_envs, **kwargs)
-        
+    
+    def _create_pre_scene_buffers(self, config: ReorientCubeEnvConfig, num_envs: int, device: torch.device):
+        with torch.device(device):
+            # Create uninitialized goal state buffers
+            self.goal_p = torch.tensor([-0.1 + 0.045, 0.01 + 0.045, 0.505 + 0.045], dtype=torch.float).unsqueeze(0).repeat(num_envs, 1)
+            self.goal_q = torch.empty((num_envs, 4), dtype=torch.float)
+            
+            # A list of all possible 90-degree cube rotations in 3D.
+            self.rotations_pool = unique_cube_rotations_3d()
+            
+            # Allocate buffers
+            # achieved_success - which subenvs succeeded in the last step (only success after hold, if applicable)
+            # goal_achievement_timer - number of timesteps since the last goal was reached (progress_buf in DeXterme)
+            # prev_targets - previous joint position targets
+            # duration_goal_held - the number of steps the goal has been held (hold_count_buf in DeXtreme)
+            # successes - the number of consecutive successes in each subenv since the last episode reset
+            # last_actions - the last actions taken
+            self.achieved_success = torch.ones(num_envs, dtype=torch.long)
+            self.prev_targets = torch.zeros((num_envs, config.dofs), dtype=torch.float)
+            self.goal_achievement_timer = torch.zeros(num_envs, dtype=torch.long)
+            self.goal_hold_timer = torch.zeros(num_envs, dtype=torch.long)
+            self.successes = torch.zeros(num_envs, dtype=torch.float)
+            self.last_actions = torch.zeros((num_envs, config.dofs), dtype=torch.float)
+            
     def _load_agent(self, options: dict):
         """Override the initial pose of the robot hand."""
         initial_hand_pose = sapien.Pose(p=[0, 0, self.hand_elevation],
@@ -147,51 +140,40 @@ class ReorientCubeEnv(BaseEnv):
         
         # Create the cube
         self.cube = build_cube(self.scene)
-        
-        # Create the goal
-        self.goal = build_goal(self.scene)
     
-    def reset_goals(self, env_ids):
+    def _initialize_goals(self, env_ids: torch.Tensor):
         """Resample new goals for the specified environment IDs."""
-        
-        goal_q = self.goal.pose.q
-        
-        # Resample the goal poses
-        if self.config.sample_so3:
-            goal_q[env_ids] = random_quaternion(env_ids, rng=self._batched_episode_rng)
-        else:
-            goal_q[env_ids] = sample_rotations(env_ids, self.rotations_pool, rng=self._batched_episode_rng)
-
-        # Update the goals in the visualizer
-        goal_pose = Pose.create_from_pq(p=[-0.1 + 0.045, 0.01 + 0.045, 0.505 + 0.045], q=goal_q)
-        self.goal.set_pose(goal_pose)
-        
-    def _initialize_episode(self, env_ids: torch.Tensor, options: dict):
-        """Set the initial states of all non-static objects, including the robot."""
         with torch.device(self.device):
-            # Resample new goals for subenvs getting reset
-            self.reset_goals(env_ids)
+            # Resample the goal poses
+            if self.config.sample_so3:
+                self.goal_q[env_ids] = random_quaternion(env_ids, rng=self._batched_episode_rng)
+            else:
+                self.goal_q[env_ids] = sample_rotations(env_ids, self.rotations_pool, rng=self._batched_episode_rng)
+    
+    def _initialize_actors(self, env_ids: torch.Tensor):
+        with torch.device(self.device):
+            # Reset cube
+            init_cube_pos = torch.tensor([-0.1 + 0.045, 0.01 + 0.045, 0.505 + 0.045], dtype=torch.float)
+            init_cube_rot = torch.tensor([1, 0, 0, 0], dtype=torch.float)
+            self.cube.set_pose(Pose.create_from_pq(p=init_cube_pos, q=init_cube_rot))
             
-            # Reset the cube position
-            p = self.cube.pose.p
-            q = self.cube.pose.q
-
-            p[env_ids] = torch.tensor([-0.1 + 0.045, 0.01 + 0.045, 0.505 + 0.045], dtype=torch.float)
-            q[env_ids] = torch.tensor([1, 0, 0, 0], dtype=torch.float)
-            
-            self.cube.set_pose(Pose.create_from_pq(p=p, q=q))
-            
-            self.agent.reset(np.zeros(16))
-            #self.agent.robot.set_pose(sapien.Pose([-1.05, 0, -self.table_height]))
+    def _initialize_agent(self, env_ids: torch.Tensor):
+        with torch.device(self.device):
+            # Get the number of environments undergoing reset
+            num_resets = len(env_ids)
             
             # Reset the hand
-            #self.agent.controller.reset()
+            init_qpos = torch.zeros((num_resets, self.config.dofs))
+            self.agent.reset(init_qpos)
+            self.agent.robot.set_pose(
+                Pose.create_from_pq(
+                    torch.tensor([0, 0, self.hand_elevation], dtype=torch.float),
+                    torch.tensor([0, 1, 0, 0], dtype=torch.float),
+                )
+            )
             
-            #qpos = self.agent.robot.qpos
-            #qvel = self.agent.robot.qvel
-            
-            #qpos[env_ids] = self.agent.controller.ini
-            
+    def _initialize_buffers(self, env_ids: torch.Tensor):
+        with torch.device(self.device):
             # Reset buffers
             self.goal_hold_timer[env_ids] = 0
             self.last_actions[env_ids] = 0
@@ -199,19 +181,26 @@ class ReorientCubeEnv(BaseEnv):
             if self.config.use_adr and len(env_ids) == self.num_envs:
                 # TODO: Why does DeXtreme do this?
                 self.goal_achievement_timer = batched_randint(0, self.config.stuck_timeout * self.control_freq,
-                                                              dtype=torch.long, device=self.device,
-                                                              rng=self._batched_episode_rng)
+                                                                dtype=torch.long, device=self.device,
+                                                                rng=self._batched_episode_rng)
             else:
                 self.goal_achievement_timer[env_ids] = 0
+            
+    def _initialize_episode(self, env_ids: torch.Tensor, options: dict):
+        """Set the initial states of all non-static objects, including the robot."""
+        self._initialize_goals(env_ids)
+        self._initialize_actors(env_ids)
+        self._initialize_agent(env_ids)
+        self._initialize_buffers(env_ids)
     
     def _get_obs_extra(self, info):
         # TODO: There are some more observations we need
         obs = {
             #"object_position_with_noise": None,
             #"object_orientation_with_noise": None,
-            "target_position": self.goal.pose.p,
-            "target_orientation": self.goal.pose.q,
-            "relative_target_orientation": batched_quat_diff(self.goal.pose.q, self.cube.pose.q),
+            "target_position": self.goal_p,
+            "target_orientation": self.goal_q,
+            "relative_target_orientation": batched_quat_diff(self.goal_q, self.cube.pose.q),
             "last_actions": self.last_actions.clone(),
             "hand_joint_angles": self.agent.controller.qpos,
             "hand_joint_velocities": self.agent.robot.qvel,
@@ -258,7 +247,7 @@ class ReorientCubeEnv(BaseEnv):
     def _before_control_step(self):
         # Resample new goals in subenvs that just reached success in the last step
         reset_goal_env_ids = self.achieved_success.nonzero().squeeze(-1)
-        self.reset_goals(reset_goal_env_ids)
+        self._initialize_goals(reset_goal_env_ids)
         
         # Apply random forces
         self.apply_random_forces()
@@ -272,8 +261,8 @@ class ReorientCubeEnv(BaseEnv):
         
     def evaluate(self):
         # Compute error terms
-        position_error = torch.norm(self.cube.pose.p - self.goal.pose.p, dim = -1)
-        orientation_error = common.quat_diff_rad(self.cube.pose.q, self.goal.pose.q)
+        position_error = torch.norm(self.cube.pose.p - self.goal_p, dim = -1)
+        orientation_error = common.quat_diff_rad(self.cube.pose.q, self.goal_q)
         
         # Check for success
         # TODO: Do we need torch.abs here or is it already non-negative?
@@ -351,10 +340,10 @@ class ReorientCubeEnv(BaseEnv):
         return (
             orientation_reward +\
             position_reward +\
-            action_penalty +\
-            action_delta_penalty +\
-            velocity_penalty +\
-            success_reward +\
-            drop_penalty +\
-            timeout_penalty
+            #action_penalty +\
+            #action_delta_penalty +\
+            #velocity_penalty +\
+            success_reward# +\
+            #drop_penalty +\
+            #timeout_penalty
         )
