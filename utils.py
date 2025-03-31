@@ -15,9 +15,9 @@ if TYPE_CHECKING:
 
 def random_quaternion(env_ids: Tensor, *, rng: BatchedRNG):
     """Sample uniform random quaternions using Marsaglia method."""
-    u1 = torch.from_numpy(rng.rand())[env_ids].to(torch.float32)
-    u2 = torch.from_numpy(rng.rand())[env_ids].to(torch.float32)
-    u3 = torch.from_numpy(rng.rand())[env_ids].to(torch.float32)
+    u1 = torch.from_numpy(rng.rand())[env_ids].to(torch.float)
+    u2 = torch.from_numpy(rng.rand())[env_ids].to(torch.float)
+    u3 = torch.from_numpy(rng.rand())[env_ids].to(torch.float)
 
     q1 = torch.sqrt(1 - u1) * torch.sin(2 * torch.pi * u2)
     q2 = torch.sqrt(1 - u1) * torch.cos(2 * torch.pi * u2)
@@ -46,7 +46,7 @@ def unique_cube_rotations_3d() -> list[ndarray]:
             if np.linalg.det(rotation_matrix) == 1:
                 all_rotations.append(R.from_matrix(rotation_matrix).as_quat())
 
-    return torch.from_numpy(np.array(all_rotations)).to(torch.float32)
+    return torch.from_numpy(np.array(all_rotations)).to(dtype=torch.float)
 
 def batched_quat_diff(q1: Tensor, q2: Tensor) -> Tensor:
     """
