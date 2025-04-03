@@ -49,14 +49,23 @@ def unique_cube_rotations_3d() -> Tensor:
 
     return torch.from_numpy(np.array(all_rotations)).to(dtype=torch.float)
 
-def batched_quat_diff(q1: Tensor, q2: Tensor) -> Tensor:
-    """
-    Compute the difference between two quaternions in batch.
-    The difference is represented as the quaternion that rotates q2 to q1.
-    """
-    q1_conj = torch.cat([q1[..., :3] * -1, q1[..., 3:]], dim=-1)
-    q_diff = torch.einsum('...ij,...j->...i', q1_conj, q2)
-    return q_diff
+def quaternion_conjugate(q):
+    """Compute the batched quaternion conjugate."""
+    return torch.cat((q[:, :1], -q[:, 1:]), dim=1)
+
+def quaternion_multiply(q1, q2):
+    """Compute batched quaternion multiplications."""
+    w1, xyz1 = q1[:, :1], q1[:, 1:]
+    w2, xyz2 = q2[:, :1], q2[:, 1:]
+
+    w = w1 * w2 - torch.sum(xyz1 * xyz2, dim=1, keepdim=True)
+    xyz = w1 * xyz2 + w2 * xyz1 + torch.cross(xyz1, xyz2, dim=1)
+
+    return torch.cat((w, xyz), dim=1)
+
+def quaternion_difference(q1, q2):
+    """Compute batched quaternion differences."""
+    return quaternion_multiply(q1, quaternion_conjugate(q2))
 
 def batched_randint(lo: int, hi: int, *, dtype: torch.dtype, device: torch.device, rng: BatchedRNG) -> Tensor:
     return torch.from_numpy(rng.randint(lo, hi)).to(dtype=dtype, device=device)
